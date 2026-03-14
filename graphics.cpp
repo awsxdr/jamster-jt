@@ -3,87 +3,42 @@
 #include <Magick++.h>
 #include <vector>
 #include <iostream>
+#include <algorithm>
+#include <string>
+#include <cstring>
 
 using namespace std;
 using namespace Magick;
-using namespace MagickCore;
-
-// struct Pixel64 { 
-//     //unsigned short alpha;
-//     unsigned short red;
-//     unsigned short red2;
-//     unsigned short green;
-//     unsigned short green2;
-//     unsigned short blue;
-//     unsigned short blue2;
-// };
-
-// struct Pixel64 { 
-//     unsigned int red;
-//     unsigned int green;
-//     unsigned int blue;
-// };
 
 struct Pixel64 { 
-    //float alpha;
+    float red;
+    float green;
+    float blue;
+    float alpha;
+};
+
+struct PixelRgb {
     float red;
     float green;
     float blue;
 };
 
-Graphics::Graphics(const GraphicsDevice& device) : _device(device), _width(device.width()), _height(device.height()) {
-    Magick::InitializeMagick(nullptr);
+int float_to_int(float value) {
+    const float magic = 1 << 23;
 
-    //Magick::Image image("img/gradient_bw.png");
-    Magick::Image image("img/lena_scaled.jpg");
+    auto const intermediate = value + magic;
 
-    image.modifyImage();
-    //image.scale(Magick::Geometry(128, 160));
+    const int* result_ptr = reinterpret_cast<const int*>(&intermediate);
 
-    Magick::Image buffer;
-    buffer.size(Magick::Geometry(128, 160));
-    //buffer.magick("RGB565");
-    buffer.modifyImage();
+    return (*result_ptr) & 0x7fffff;
+}
 
-    vector<Magick::Drawable> commands;
-    commands.push_back(Magick::DrawableCompositeImage(0, 0, image));
-    buffer.draw(commands);
-
-    Magick::Pixels view(image);
-    //auto const pixels = reinterpret_cast<Pixel64*>(view.get(0, 0, 160, 128));
-    auto pixels = reinterpret_cast<Pixel64*>(image.getPixels(0, 0, 128, 160));
-    //auto const pixels = view.get(0, 0, 160, 128);
-
-    _bitmap = new unsigned short[device.width() * device.height()];
-
-    auto const size = device.width() * device.height();
-    for(auto i = 0; i < size; ++i) {
-        //auto const pixel = static_cast<unsigned short>(*(pixels+i*3));
-        auto const pixel = *(pixels+i);
-        //_bitmap[i] = from_rgb((int)pixel.red, (int)pixel.green, (int)pixel.blue);
-        //cout << pixel.quantumRed() << endl;
-        //cout << pixel << endl;
-
-        _bitmap[i] = from_rgb(
-            static_cast<byte>(pixel.red / 65535.0f * 255.0f),
-            static_cast<byte>(pixel.green / 65535.0f * 255.0f),
-            static_cast<byte>(pixel.blue / 65535.0f * 255.0f));
-        //cout << (pixel.red2 >> 8) << ", " << (pixel.green2 >> 8) << ", " << (pixel.blue2 >> 8) << endl;
-        if(i % 128 == 0)
-            cout << pixel.red / 65535.0f * 255.0f << ", " << pixel.green / 65535.0f * 255.0f << ", " << pixel.blue / 65535.0f * 255.0f << endl;
-
-        // if(i % 128 == 0)
-        //     cout << pixel << endl;
-        // _bitmap[i] = from_rgb(pixel / 256, 0, 0);
-    }
+Graphics::Graphics(const int width, const int height) : _width(width), _height(height) {
+    _bitmap = new unsigned short[width * height];
 }
 
 Graphics::~Graphics() {
     delete[] _bitmap;
-}
-
-unsigned short Graphics::from_rgb(byte red, byte green, byte blue) const {
-    return _device.color().from_rgb(red, green, blue);
 }
 
 void Graphics::clear(const unsigned short color) {
@@ -93,19 +48,18 @@ void Graphics::clear(const unsigned short color) {
     }
 }
 
-void Graphics::render() const {
-    _device.blit(0, 0, _width, _height, _bitmap);
+void Graphics::render(const GraphicsDevice& device) const {
+    device.blit(0, 0, _width, _height, _bitmap);
 }
 
 void Graphics::fill_rect(const short left, const short top, const short width, const short height, const unsigned short color) {
 
     for (short y = top; y < top + height - 1; ++y) {
         for (short x = left; x < left + width - 1; ++x) {
-            auto const adjusted_point = translate_point({ x, y });
-            if (adjusted_point.x < 0 || adjusted_point.y < 0 || adjusted_point.x > _width || adjusted_point.y > _height) {
+            if (x < 0 || y < 0 || x > _width || y > _height) {
                 continue;
             }
-            _bitmap[adjusted_point.y * _width + adjusted_point.x] = color;
+            _bitmap[y * _width + x] = color;
         }
     }
 }
@@ -113,14 +67,101 @@ void Graphics::fill_rect(const short left, const short top, const short width, c
 void Graphics::line(const unsigned short x1, const unsigned short y1, const unsigned short x2, const unsigned short y2, const unsigned short color) {
 }
 
+void Graphics::draw_image(const Graphics& image, const short x, const short y) {
+    const unsigned short target_width = min(_width, static_cast<unsigned short>(x + image._width)) - x;
+    const unsigned short target_height = min(_height, static_cast<unsigned short>(y + image._height)) - y;
+    const unsigned short target_x = max((short) 0, x);
+    const unsigned short target_y = max((short) 0, y);
+
+    for(unsigned short row = 0; row < target_height; ++row) {
+        memcpy(&_bitmap[(row + target_y) * _width + target_x], &image._bitmap[row * image._width], target_width * sizeof(short));
+    }
+}
+
+unsigned short color_from_rgb(const byte red, const byte green, const byte blue) {
+    auto const adjusted_blue = static_cast<unsigned short>(0x1f * (blue / 255.0)) << 11;
+    auto const adjusted_green = static_cast<unsigned short>(0x3f * (green / 255.0)) << 5;
+    auto const adjusted_red = static_cast<unsigned short>(0x1f * (red / 255.0));
+
+    auto const color = adjusted_blue | adjusted_green | adjusted_red;
+    auto const reordered_bytes = static_cast<unsigned short>(((color & 0xff) << 8) | (color >> 8));
+
+    return reordered_bytes;
+}
+
+RgbColor color_to_rgb(unsigned short color) {
+    auto const reordered_bytes = static_cast<unsigned short>(((color & 0xff) << 8) | (color >> 8));
+    const byte red = static_cast<byte>(((reordered_bytes & 0x1f) / 31.0f) * 255.0f);
+    const byte green = static_cast<byte>((((reordered_bytes >> 5) & 0x3f) / 63.0f) * 255.0f);
+    const byte blue = static_cast<byte>((((reordered_bytes >> 11) & 0x1f) / 31.0f) * 255.0f);
+
+    return { red, green, blue };
+}
+
+
+void Graphics::draw_text(const string& text, const short x, const short y, const RgbColor color, const float point_size) {
+    Image buffer(Geometry(_width, _height), "black");
+    buffer.magick("RGBA");
+
+    auto pixels = reinterpret_cast<PixelRgb*>(buffer.getPixels(0, 0, _width, _height));
+    auto const size = _width * _height;
+
+    for(int i = 0; i < size; ++i) {
+        auto const pixel = (pixels + i);
+        auto const pixel_color = color_to_rgb(_bitmap[i]);
+        pixel->red = static_cast<float>(pixel_color.red << 8);
+        pixel->green = static_cast<float>(pixel_color.green << 8);
+        pixel->blue = static_cast<float>(pixel_color.blue << 8);
+    }
+
+    buffer.syncPixels();
+
+    auto const text_color = ColorRGB(color.red / 255.0f, color.green / 255.0f, color.blue / 255.0f);
+    vector<Drawable> commands;
+    commands.push_back(DrawableStrokeColor(text_color));
+    commands.push_back(DrawableFillColor(text_color));
+    commands.push_back(DrawablePointSize(point_size));
+    commands.push_back(DrawableText(x, y, text.c_str()));
+    buffer.draw(commands);
+
+    auto out_pixels = reinterpret_cast<Pixel64*>(buffer.getPixels(0, 0, _width, _height));
+    for(auto i = 0; i < size; ++i) {
+        auto const pixel = *(out_pixels+i);
+
+        _bitmap[i] = color_from_rgb(
+            static_cast<byte>(float_to_int(pixel.red) >> 8),
+            static_cast<byte>(float_to_int(pixel.green) >> 8),
+            static_cast<byte>(float_to_int(pixel.blue) >> 8));
+    }
+}
+
+void Graphics::rotate_cw() {
+
+}
+
+void Graphics::rotate_ccw() {
+    auto const new_width = _height;
+    auto const new_height = _width;
+    auto new_bitmap = new unsigned short[_width * _height];
+
+    for(int y = 0; y < _height; ++y) {
+        for (int x = 0; x < _width; ++x) {
+            auto const target_x = y;
+            auto const target_y = _width - 1 - x;
+            new_bitmap[target_y * new_width + target_x] = _bitmap[y * _width + x];
+        }
+    }
+
+    delete[] _bitmap;
+    _bitmap = new_bitmap;
+    _width = new_width;
+    _height = new_height;
+}
+
 unsigned short Graphics::width() const {
-    return _device.height(); // Flipped due to screen rotation
+    return _width;
 }
 
 unsigned short Graphics::height() const {
-    return _device.width();
-}
-
-Location Graphics::translate_point(const Location& point) const {
-    return Location { point.y, static_cast<short>(_height - point.x) };
+    return _height;
 }
