@@ -9,14 +9,14 @@
 
 class Color {
     public:
-		virtual unsigned short from_rgb(const byte red, const byte green, const byte blue) const = 0;
+        virtual unsigned short from_rgb(const byte red, const byte green, const byte blue) const = 0;
 };
 
 class GraphicsDevice {
     public:
         virtual void fill_rect(const unsigned short left, const unsigned short top, const unsigned short width, const unsigned short height, const unsigned short color) const = 0;
-		virtual void blit(const unsigned short left, const unsigned short top, const unsigned short width, const unsigned short height, const unsigned short* pixels) const = 0;
-		virtual void clear(const unsigned short color) const = 0;
+        virtual void blit(const unsigned short left, const unsigned short top, const unsigned short width, const unsigned short height, const unsigned short* pixels) const = 0;
+        virtual void clear(const unsigned short color) const = 0;
 
         virtual const Color& color() const = 0;
 
@@ -24,7 +24,7 @@ class GraphicsDevice {
         virtual unsigned short height() const = 0;
 };
 
-struct Point {
+struct Location {
     short x;
     short y;
 };
@@ -50,9 +50,10 @@ class Graphics {
         const unsigned short _height;
         const unsigned short _width;
 
-        Point translate_point(const Point& point) const;
+        Location translate_point(const Location& point) const;
 
         unsigned short* _bitmap;
 };
+
 
 #endif
