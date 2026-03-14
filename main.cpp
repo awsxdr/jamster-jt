@@ -13,45 +13,74 @@ int main() {
 	auto const screen = St7735(64);
 	auto main_graphics = Graphics(screen.width(), screen.height());
 
-	main_graphics.clear(screen.color().from_rgb(255, 0, 255));
+	main_graphics.clear(screen.color().from_rgb(255, 255, 255));
 	main_graphics.render(screen);
 
-	auto text = Graphics(50, 20);
-	text.clear(screen.color().from_rgb(255, 0, 255));
-	text.draw_text("Hello", 0, 12, { 0, 255, 0 }, 16);
-	text.rotate_ccw();
+	Graphics* large_digit[10];
+	Graphics* small_digit[10];
 
+	for(auto i = 0; i < 10; ++i) {
+		auto large_image = new Graphics(20, 32);
+		large_image->clear(screen.color().from_rgb(255, 255, 255));
+
+		auto small_image = new Graphics(10, 16);
+		small_image->clear(screen.color().from_rgb(255, 255, 255));
+
+		string digit = "";
+		digit += (char)('0' + i);
+
+		large_image->draw_text(digit, 0, 24, { 0, 0, 0}, 32);
+		large_image->rotate_ccw();
+
+		small_image->draw_text(digit, 0, 12, { 0, 0, 0}, 16);
+		small_image->rotate_ccw();
+
+		large_digit[i] = large_image;
+		small_digit[i] = small_image;
+
+		main_graphics.fill_rect(90, 130 - i * 10, 10, i * 10, screen.color().from_rgb(192, 224, 255));
+		main_graphics.render(screen);
+	}
+
+	main_graphics.clear(screen.color().from_rgb(255, 255, 255));
 	main_graphics.render(screen);
 
-	auto const background_color = screen.color().from_rgb(255, 0, 255);
-	short x = screen.width() / 2 - 10;
-	short y = screen.height() / 2 - 10;
-
-	unsigned short shift_x = 1;
-	unsigned short shift_y = 1;
+	auto start_time = std::chrono::high_resolution_clock::now();
 
 	auto frame_count = 0;
+	auto last_second = 0;
 
-	while(frame_count < 500) {
-		main_graphics.fill_rect(x, y, text.width(), text.height(), background_color);
+	while(true) {
+		auto time = std::chrono::high_resolution_clock::now();
+		auto expired_time = time - start_time;
 
-		x += shift_x;
-		y += shift_y;
+		auto expired_milliseconds = expired_time / 1ms;
+		auto expired_seconds = expired_time / 1s;
+		auto expired_minutes = expired_seconds / 60;
 
-		if(x > main_graphics.width() - text.width() || x < 0) {
-			shift_x = -shift_x;
-		}
+		main_graphics.draw_image(*large_digit[((expired_seconds % 60) / 10) % 10], 20, 120);
+		main_graphics.draw_image(*large_digit[expired_seconds % 10], 20, 100);
+		main_graphics.draw_image(*small_digit[(expired_milliseconds / 100) % 10], 32, 90);
+		main_graphics.draw_image(*small_digit[(expired_milliseconds / 10) % 10], 32, 80);
 
-		if(y > main_graphics.height() - text.height() || y < 0) {
-			shift_y = -shift_y;
-		}
-
-		main_graphics.draw_image(text, x, y);
 		main_graphics.render(screen);
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		if(expired_seconds > 31) {
+			break;
+		}
 
 		++frame_count;
+
+		if(expired_seconds != last_second) {
+			cout << frame_count << " FPS" << endl;
+			frame_count = 0;
+			last_second = expired_seconds;
+		}
+	}
+
+	for (auto i = 0; i < 10; ++i) {
+		delete large_digit[i];
+		delete small_digit[i];
 	}
 
 	return 0;
